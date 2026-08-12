@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -28,6 +29,34 @@ app.get('/health', async (req, res) => {
     });
   } catch (err) {
     console.error('DB health check failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Runs schema.sql against the database. Safe to call more than once —
+// every statement uses IF NOT EXISTS / ON CONFLICT so it won't wipe existing data.
+app.get('/setup', async (req, res) => {
+  try {
+    const sql = fs.readFileSync('./schema.sql', 'utf8');
+    await pool.query(sql);
+    res.json({ status: 'ok', message: 'Schema created successfully.' });
+  } catch (err) {
+    console.error('Setup failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Lists all tables that currently exist, so you can confirm setup worked.
+app.get('/tables', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `);
+    res.json({ status: 'ok', tables: result.rows.map(r => r.table_name) });
+  } catch (err) {
+    console.error('Table list failed:', err);
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
