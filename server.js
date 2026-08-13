@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const { resolveEventKnowledge } = require('./eventEngine');
 const { getCharacterDecision } = require('./aiDecision');
+const { applyDecision } = require('./actionResolver');
 require('dotenv').config();
 
 const app = express();
@@ -272,6 +273,82 @@ app.get('/test-decision', async (req, res) => {
     });
   } catch (err) {
     console.error('Test decision failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// TEST ROUTE for Step 6: gets a character's AI decision AND applies its
+// effects to the world (relationships, mood, memories) — not just logging.
+// Usage: /test-apply?name=Karlos
+app.get('/test-apply', async (req, res) => {
+  try {
+    const name = req.query.name || 'Karlos';
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    }
+
+    const charResult = await pool.query(
+      `SELECT c.*, s.location, s.money, s.mood
+       FROM characters c JOIN character_state s ON s.character_id = c.id
+       WHERE c.name = $1`,
+      [name]
+    );
+    if (charResult.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: `Character "${name}" not found.` });
+    }
+    const character = charResult.rows[0];
+
+    const allCharResult = await pool.query('SELECT id, name FROM characters');
+    const allCharacters = allCharResult.rows;
+
+    const memResult = await pool.query(
+      `SELECT event_description, emotion, importance
+       FROM memories WHERE character_id = $1
+       ORDER BY importance DESC, created_at DESC LIMIT 8`,
+      [character.id]
+    );
+
+    const relResult = await pool.query(
+      `SELECT r.trust, r.affinity, c2.name AS target_name
+       FROM relationships r
+       JOIN characters c2 ON c2.id = r.target_character_id
+       WHERE r.character_id = $1`,
+      [character.id]
+    );
+
+    const turnResult = await pool.query('SELECT current_turn FROM world_state WHERE id = 1');
+    const currentTurn = turnResult.rows[0].current_turn;
+
+    const situation = `100 coins were reported missing from the shared market stall this morning.`;
+    const availableActions = ['investigate', 'accuse someone', 'ignore it', 'protect himself', 'make an alliance', 'try to recover the money'];
+
+    const decision = await getCharacterDecision(
+      character, memResult.rows, relResult.rows, situation, availableActions, process.env.GEMINI_API_KEY
+    );
+
+    const effects = await applyDecision(pool, character, decision, allCharacters, currentTurn);
+
+    res.json({ status: 'ok', character: character.name, decision, effects_applied: effects });
+  } catch (err) {
+    console.error('Test apply failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// View all relationships, so you can confirm they changed after an action.
+app.get('/relationships', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c1.name AS from_character, c2.name AS to_character, r.trust, r.affinity
+      FROM relationships r
+      JOIN characters c1 ON c1.id = r.character_id
+      JOIN characters c2 ON c2.id = r.target_character_id
+      ORDER BY c1.name, c2.name
+    `);
+    res.json({ status: 'ok', relationships: result.rows });
+  } catch (err) {
+    console.error('Fetching relationships failed:', err);
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
