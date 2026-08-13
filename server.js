@@ -386,6 +386,130 @@ app.get('/events', async (req, res) => {
   }
 });
 
+// ===== PLAYER INTERVENTIONS (Step 9) — "god mode" actions =====
+// All of these use POST since they change world state, not just view it.
+
+// Give or take money. Body: { name, amount } — amount can be negative.
+app.post('/intervene/money', async (req, res) => {
+  try {
+    const { name, amount } = req.body;
+    if (!name || amount === undefined) {
+      return res.status(400).json({ status: 'error', message: 'Provide name and amount.' });
+    }
+    const result = await pool.query(
+      `UPDATE character_state
+       SET money = GREATEST(0, money + $1), updated_at = NOW()
+       FROM characters c
+       WHERE character_state.character_id = c.id AND c.name = $2
+       RETURNING c.name, character_state.money`,
+      [amount, name]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: `Character "${name}" not found.` });
+    }
+    res.json({ status: 'ok', updated: result.rows[0] });
+  } catch (err) {
+    console.error('Intervene money failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Move a character. Body: { name, location }
+app.post('/intervene/move', async (req, res) => {
+  try {
+    const { name, location } = req.body;
+    if (!name || !location) {
+      return res.status(400).json({ status: 'error', message: 'Provide name and location.' });
+    }
+    const result = await pool.query(
+      `UPDATE character_state
+       SET location = $1, updated_at = NOW()
+       FROM characters c
+       WHERE character_state.character_id = c.id AND c.name = $2
+       RETURNING c.name, character_state.location`,
+      [location, name]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: `Character "${name}" not found.` });
+    }
+    res.json({ status: 'ok', updated: result.rows[0] });
+  } catch (err) {
+    console.error('Intervene move failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Trigger a custom event with player-written text. Body: { description, location }
+// Goes through the same witness/rumor resolution as automatic events.
+app.post('/intervene/event', async (req, res) => {
+  try {
+    const { description, location } = req.body;
+    if (!description || !location) {
+      return res.status(400).json({ status: 'error', message: 'Provide description and location.' });
+    }
+
+    const charResult = await pool.query(`
+      SELECT c.id, c.name, s.location
+      FROM characters c JOIN character_state s ON s.character_id = c.id
+    `);
+    const allCharacters = charResult.rows;
+
+    const turnResult = await pool.query('SELECT current_turn FROM world_state WHERE id = 1');
+    const currentTurn = turnResult.rows[0].current_turn;
+
+    const event = { description, location, peopleInvolved: [] };
+
+    await pool.query(
+      `INSERT INTO world_events (description, people_involved, turn_number) VALUES ($1, $2, $3)`,
+      [event.description, event.peopleInvolved, currentTurn]
+    );
+
+    const knowledgeResults = resolveEventKnowledge(event, allCharacters);
+    for (const entry of knowledgeResults) {
+      await pool.query(
+        `INSERT INTO memories (character_id, event_description, importance, emotion, people_involved, turn_number)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [entry.character_id, entry.memory_text, entry.is_accurate ? 70 : 40,
+         entry.source === 'witnessed' ? 'concern' : 'suspicion', event.peopleInvolved, currentTurn]
+      );
+    }
+
+    res.json({ status: 'ok', event, affected: knowledgeResults.map(r => r.character_id) });
+  } catch (err) {
+    console.error('Intervene event failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// Give a character a SECRET memory only they know. Body: { name, memoryText }
+app.post('/intervene/secret', async (req, res) => {
+  try {
+    const { name, memoryText } = req.body;
+    if (!name || !memoryText) {
+      return res.status(400).json({ status: 'error', message: 'Provide name and memoryText.' });
+    }
+    const charResult = await pool.query('SELECT id FROM characters WHERE name = $1', [name]);
+    if (charResult.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: `Character "${name}" not found.` });
+    }
+    const characterId = charResult.rows[0].id;
+
+    const turnResult = await pool.query('SELECT current_turn FROM world_state WHERE id = 1');
+    const currentTurn = turnResult.rows[0].current_turn;
+
+    await pool.query(
+      `INSERT INTO memories (character_id, event_description, importance, emotion, people_involved, turn_number)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [characterId, memoryText, 80, 'secret', [], currentTurn]
+    );
+
+    res.json({ status: 'ok', message: `Secret memory given to ${name}.` });
+  } catch (err) {
+    console.error('Intervene secret failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`AI Society server running on port ${PORT}`);
 });
