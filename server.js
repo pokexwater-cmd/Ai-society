@@ -3,6 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const fs = require('fs');
 const { resolveEventKnowledge } = require('./eventEngine');
+const { getCharacterDecision } = require('./aiDecision');
 require('dotenv').config();
 
 const app = express();
@@ -205,6 +206,72 @@ app.get('/move-character', async (req, res) => {
     res.json({ status: 'ok', updated: result.rows[0] });
   } catch (err) {
     console.error('Move character failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// TEST ROUTE for Step 5: gets ONE character's AI decision about the coin
+// theft situation, using their own memories + relationships. Does NOT apply
+// the result to the world yet — just logs what Gemini decided.
+// Usage: /test-decision?name=Karlos
+app.get('/test-decision', async (req, res) => {
+  try {
+    const name = req.query.name || 'Karlos';
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    }
+
+    // Get the character's own data
+    const charResult = await pool.query(
+      `SELECT c.*, s.location, s.money, s.mood
+       FROM characters c JOIN character_state s ON s.character_id = c.id
+       WHERE c.name = $1`,
+      [name]
+    );
+    if (charResult.rows.length === 0) {
+      return res.status(404).json({ status: 'error', message: `Character "${name}" not found.` });
+    }
+    const character = charResult.rows[0];
+
+    // Get this character's memories (v1: just their most recent/important ones)
+    const memResult = await pool.query(
+      `SELECT event_description, emotion, importance
+       FROM memories WHERE character_id = $1
+       ORDER BY importance DESC, created_at DESC LIMIT 8`,
+      [character.id]
+    );
+
+    // Get this character's relationships with named targets
+    const relResult = await pool.query(
+      `SELECT r.trust, r.affinity, c2.name AS target_name
+       FROM relationships r
+       JOIN characters c2 ON c2.id = r.target_character_id
+       WHERE r.character_id = $1`,
+      [character.id]
+    );
+
+    const situation = `100 coins were reported missing from the shared market stall this morning.`;
+    const availableActions = ['investigate', 'accuse someone', 'ignore it', 'protect himself', 'make an alliance', 'try to recover the money'];
+
+    const decision = await getCharacterDecision(
+      character,
+      memResult.rows,
+      relResult.rows,
+      situation,
+      availableActions,
+      process.env.GEMINI_API_KEY
+    );
+
+    res.json({
+      status: 'ok',
+      character: character.name,
+      memories_used: memResult.rows,
+      relationships_used: relResult.rows,
+      decision
+    });
+  } catch (err) {
+    console.error('Test decision failed:', err);
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
