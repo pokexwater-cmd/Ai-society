@@ -370,6 +370,22 @@ app.get('/run-turn', async (req, res) => {
   }
 });
 
+// Recent world events, for the live event log in the UI.
+app.get('/events', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, description, turn_number, created_at
+      FROM world_events
+      ORDER BY turn_number DESC, created_at DESC
+      LIMIT 30
+    `);
+    res.json({ status: 'ok', events: result.rows });
+  } catch (err) {
+    console.error('Fetching events failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`AI Society server running on port ${PORT}`);
 });
