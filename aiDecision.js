@@ -1,11 +1,12 @@
-// aiDecision.js — Step 5
+// aiDecision.js — Step 5, upgraded in Step 9.5 to use multi-provider fallback
 //
-// Builds a compact context payload for ONE character and asks Gemini for a
-// structured JSON decision. This keeps API usage cheap: we only send this
-// character's own traits + their most relevant memories + the current
-// situation — never the whole world history.
+// Builds a compact context payload for ONE character and asks an AI provider
+// (with automatic fallback across 4 providers) for a structured JSON decision.
+// This keeps API usage cheap: we only send this character's own traits +
+// their most relevant memories + the current situation — never the whole
+// world history.
 
-const GEMINI_MODEL = 'gemini-3.6-flash';
+const { getDecisionWithFallback } = require('./aiProviders');
 
 function buildPrompt(character, relevantMemories, relationships, situation, availableActions) {
   const memoriesText = relevantMemories.length > 0
@@ -48,37 +49,11 @@ Respond with ONLY this JSON structure, nothing else:
 }`;
 }
 
-async function getCharacterDecision(character, relevantMemories, relationships, situation, availableActions, apiKey) {
+// keys = { gemini, groq, openrouter, cohere }
+async function getCharacterDecision(character, relevantMemories, relationships, situation, availableActions, keys) {
   const prompt = buildPrompt(character, relevantMemories, relationships, situation, availableActions);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }]
-    })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error?.message || 'Gemini API error');
-  }
-
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  // Gemini sometimes wraps JSON in ```json fences — strip those if present
-  const cleaned = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-
-  let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    throw new Error('Could not parse Gemini response as JSON: ' + rawText);
-  }
-
-  return parsed;
+  const { decision, providerUsed } = await getDecisionWithFallback(prompt, keys);
+  return { ...decision, _provider: providerUsed };
 }
 
 module.exports = { getCharacterDecision, buildPrompt };
