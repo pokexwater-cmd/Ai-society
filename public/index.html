@@ -175,6 +175,91 @@
     cursor: pointer;
   }
 
+  #godmode-btn {
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid #333;
+    background: #16161b;
+    color: #f2f2f5;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #godmode-btn:active { background: #1c1c22; }
+
+  #godmode-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: flex-end;
+    z-index: 25;
+  }
+  #godmode-overlay.visible { display: flex; }
+  #godmode-panel {
+    background: #101014;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #232329;
+  }
+  #godmode-panel h2 { margin: 0 0 16px; font-size: 18px; }
+  .gm-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .gm-tab {
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: #1c1c22;
+    border: none;
+    color: #cfcfd6;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .gm-tab.active { background: #4ade80; color: #06280f; font-weight: 600; }
+  .gm-form { display: none; flex-direction: column; gap: 10px; }
+  .gm-form.active { display: flex; }
+  .gm-form label { font-size: 12px; color: #9a9aa2; margin-bottom: -4px; }
+  .gm-form select, .gm-form input, .gm-form textarea {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid #2a2a32;
+    background: #16161b;
+    color: #f2f2f5;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .gm-form textarea { resize: vertical; min-height: 70px; }
+  .gm-submit {
+    margin-top: 6px;
+    padding: 13px;
+    border-radius: 10px;
+    border: none;
+    background: #4ade80;
+    color: #06280f;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .gm-submit:active { background: #3fc76f; }
+  #close-godmode {
+    float: right;
+    background: #1c1c22;
+    border: none;
+    color: #cfcfd6;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
   #toast {
     position: fixed;
     top: max(16px, env(safe-area-inset-top, 16px));
@@ -208,6 +293,7 @@
 </main>
 
 <div id="controls">
+  <button id="godmode-btn">⚡ Intervene</button>
   <button id="next-turn-btn">Next Turn</button>
 </div>
 
@@ -215,6 +301,52 @@
 
 <div id="detail-overlay">
   <div id="detail-panel"></div>
+</div>
+
+<div id="godmode-overlay">
+  <div id="godmode-panel">
+    <button id="close-godmode">&times;</button>
+    <h2>⚡ Intervene</h2>
+
+    <div class="gm-tabs">
+      <button class="gm-tab active" data-form="money">Money</button>
+      <button class="gm-tab" data-form="move">Move</button>
+      <button class="gm-tab" data-form="event">Event</button>
+      <button class="gm-tab" data-form="secret">Secret</button>
+    </div>
+
+    <form class="gm-form active" id="form-money">
+      <label>Character</label>
+      <select name="name" id="money-name"></select>
+      <label>Amount (negative to take away)</label>
+      <input type="number" name="amount" placeholder="e.g. 50 or -20" required />
+      <button type="submit" class="gm-submit">Apply</button>
+    </form>
+
+    <form class="gm-form" id="form-move">
+      <label>Character</label>
+      <select name="name" id="move-name"></select>
+      <label>New location</label>
+      <input type="text" name="location" placeholder="e.g. Market, Tavern, Town Square" required />
+      <button type="submit" class="gm-submit">Apply</button>
+    </form>
+
+    <form class="gm-form" id="form-event">
+      <label>Event description</label>
+      <textarea name="description" placeholder="e.g. A fire broke out near the market stalls." required></textarea>
+      <label>Location</label>
+      <input type="text" name="location" placeholder="e.g. Market" required />
+      <button type="submit" class="gm-submit">Trigger Event</button>
+    </form>
+
+    <form class="gm-form" id="form-secret">
+      <label>Character (only they will know this)</label>
+      <select name="name" id="secret-name"></select>
+      <label>Secret information</label>
+      <textarea name="memoryText" placeholder="e.g. You secretly saw Alisha take the coins." required></textarea>
+      <button type="submit" class="gm-submit">Give Secret</button>
+    </form>
+  </div>
 </div>
 
 <script>
@@ -347,6 +479,123 @@ detailOverlay.addEventListener('click', (e) => {
   if (e.target === detailOverlay) detailOverlay.classList.remove('visible');
 });
 
+const godmodeBtn = document.getElementById('godmode-btn');
+const godmodeOverlay = document.getElementById('godmode-overlay');
+const closeGodmode = document.getElementById('close-godmode');
+const gmTabs = document.querySelectorAll('.gm-tab');
+const gmForms = document.querySelectorAll('.gm-form');
+
+function populateCharacterSelects() {
+  const selects = [
+    document.getElementById('money-name'),
+    document.getElementById('move-name'),
+    document.getElementById('secret-name')
+  ];
+  selects.forEach(sel => {
+    sel.innerHTML = charactersCache.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+  });
+}
+
+godmodeBtn.addEventListener('click', () => {
+  populateCharacterSelects();
+  godmodeOverlay.classList.add('visible');
+});
+closeGodmode.addEventListener('click', () => godmodeOverlay.classList.remove('visible'));
+godmodeOverlay.addEventListener('click', (e) => {
+  if (e.target === godmodeOverlay) godmodeOverlay.classList.remove('visible');
+});
+
+gmTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    gmTabs.forEach(t => t.classList.remove('active'));
+    gmForms.forEach(f => f.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('form-' + tab.dataset.form).classList.add('active');
+  });
+});
+
+async function refreshWorld() {
+  await loadCharacters();
+  await loadEvents();
+  await loadTurn();
+}
+
+document.getElementById('form-money').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const res = await fetch('/intervene/money', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fd.get('name'), amount: Number(fd.get('amount')) })
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+    await refreshWorld();
+    godmodeOverlay.classList.remove('visible');
+    e.target.reset();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+});
+
+document.getElementById('form-move').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const res = await fetch('/intervene/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fd.get('name'), location: fd.get('location') })
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+    await refreshWorld();
+    godmodeOverlay.classList.remove('visible');
+    e.target.reset();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+});
+
+document.getElementById('form-event').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const res = await fetch('/intervene/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: fd.get('description'), location: fd.get('location') })
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+    await refreshWorld();
+    godmodeOverlay.classList.remove('visible');
+    e.target.reset();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+});
+
+document.getElementById('form-secret').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    const res = await fetch('/intervene/secret', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fd.get('name'), memoryText: fd.get('memoryText') })
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+    showToast('Secret given.');
+    godmodeOverlay.classList.remove('visible');
+    e.target.reset();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+});
+
 nextTurnBtn.addEventListener('click', async () => {
   nextTurnBtn.disabled = true;
   nextTurnBtn.textContent = 'Thinking…';
@@ -371,6 +620,7 @@ async function init() {
     await loadCharacters();
     await loadEvents();
     await loadTurn();
+    populateCharacterSelects();
   } catch (err) {
     showToast('Error loading world: ' + err.message);
   }
