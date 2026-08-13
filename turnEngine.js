@@ -15,7 +15,7 @@ const { applyDecision } = require('./actionResolver');
 
 const DEFAULT_ACTIONS = ['investigate', 'accuse someone', 'ignore it', 'protect himself', 'make an alliance', 'try to recover the money'];
 
-async function runTurn(pool, apiKey) {
+async function runTurn(pool, keys) {
   const summary = { turn: null, event: null, affected_characters: [], decisions: [] };
 
   // 1. Advance turn counter
@@ -90,7 +90,7 @@ async function runTurn(pool, apiKey) {
 
     try {
       const decision = await getCharacterDecision(
-        character, memResult.rows, relResult.rows, situation, DEFAULT_ACTIONS, apiKey
+        character, memResult.rows, relResult.rows, situation, DEFAULT_ACTIONS, keys
       );
       const effects = await applyDecision(pool, character, decision, allCharacters, currentTurn);
 
