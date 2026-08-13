@@ -8,6 +8,16 @@ const { applyDecision } = require('./actionResolver');
 const { runTurn } = require('./turnEngine');
 require('dotenv').config();
 
+// Bundle all 4 provider keys together — passed wherever an AI decision is needed.
+function getProviderKeys() {
+  return {
+    gemini: process.env.GEMINI_API_KEY,
+    groq: process.env.GROQ_API_KEY,
+    openrouter: process.env.OPENROUTER_API_KEY,
+    cohere: process.env.COHERE_API_KEY
+  };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -220,11 +230,10 @@ app.get('/test-decision', async (req, res) => {
   try {
     const name = req.query.name || 'Karlos';
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    const keys = getProviderKeys();
+    if (!keys.gemini && !keys.groq && !keys.openrouter && !keys.cohere) {
+      return res.status(500).json({ status: 'error', message: 'No AI provider keys configured.' });
     }
-
-    // Get the character's own data
     const charResult = await pool.query(
       `SELECT c.*, s.location, s.money, s.mood
        FROM characters c JOIN character_state s ON s.character_id = c.id
@@ -262,7 +271,7 @@ app.get('/test-decision', async (req, res) => {
       relResult.rows,
       situation,
       availableActions,
-      process.env.GEMINI_API_KEY
+      keys
     );
 
     res.json({
@@ -285,8 +294,9 @@ app.get('/test-apply', async (req, res) => {
   try {
     const name = req.query.name || 'Karlos';
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    const keys = getProviderKeys();
+    if (!keys.gemini && !keys.groq && !keys.openrouter && !keys.cohere) {
+      return res.status(500).json({ status: 'error', message: 'No AI provider keys configured.' });
     }
 
     const charResult = await pool.query(
@@ -325,7 +335,7 @@ app.get('/test-apply', async (req, res) => {
     const availableActions = ['investigate', 'accuse someone', 'ignore it', 'protect himself', 'make an alliance', 'try to recover the money'];
 
     const decision = await getCharacterDecision(
-      character, memResult.rows, relResult.rows, situation, availableActions, process.env.GEMINI_API_KEY
+      character, memResult.rows, relResult.rows, situation, availableActions, keys
     );
 
     const effects = await applyDecision(pool, character, decision, allCharacters, currentTurn);
@@ -359,10 +369,11 @@ app.get('/relationships', async (req, res) => {
 // affected, only calls AI for those characters, applies their decisions.
 app.get('/run-turn', async (req, res) => {
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    const keys = getProviderKeys();
+    if (!keys.gemini && !keys.groq && !keys.openrouter && !keys.cohere) {
+      return res.status(500).json({ status: 'error', message: 'No AI provider keys configured.' });
     }
-    const summary = await runTurn(pool, process.env.GEMINI_API_KEY);
+    const summary = await runTurn(pool, keys);
     res.json({ status: 'ok', summary });
   } catch (err) {
     console.error('Run turn failed:', err);
