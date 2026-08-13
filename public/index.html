@@ -2,50 +2,382 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>AI Society Simulator</title>
 <style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
     background: #0a0a0d;
-    color: #f5f5f7;
+    color: #f2f2f5;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  body { padding-bottom: 90px; }
+
+  header {
+    padding: 18px 16px 12px;
+    text-align: center;
+    border-bottom: 1px solid #1c1c22;
+  }
+  header h1 { font-size: 18px; margin: 0 0 4px; }
+  header p { font-size: 12px; color: #8a8a92; margin: 0; }
+
+  #turn-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #16161b;
+    font-size: 12px;
+    color: #cfcfd6;
+  }
+
+  main { padding: 16px; max-width: 640px; margin: 0 auto; }
+
+  h2.section-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8a8a92;
+    margin: 24px 0 10px;
+  }
+
+  #character-cards {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    margin: 0;
-    text-align: center;
-    padding: 20px;
+    gap: 10px;
   }
-  h1 { font-size: 22px; margin-bottom: 8px; }
-  p { color: #9a9aa2; font-size: 14px; }
-  #status {
-    margin-top: 20px;
-    padding: 10px 18px;
-    border-radius: 10px;
+  .char-card {
     background: #16161b;
+    border: 1px solid #232329;
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+  }
+  .char-card:active { background: #1c1c22; }
+  .char-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .char-name { font-size: 16px; font-weight: 600; }
+  .char-mood {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #232329;
+    color: #cfcfd6;
+    text-transform: capitalize;
+  }
+  .char-meta {
+    display: flex;
+    gap: 14px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #9a9aa2;
+  }
+  .char-meta span b { color: #f2f2f5; font-weight: 600; }
+
+  #event-log {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    background: #101014;
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid #1c1c22;
+  }
+  .event-entry {
+    font-size: 13px;
+    line-height: 1.5;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1c1c22;
+  }
+  .event-entry:first-child { border-bottom: none; padding-bottom: 0; }
+  .event-turn { color: #6b6b74; font-size: 11px; margin-right: 6px; }
+
+  #empty-log { color: #6b6b74; font-size: 13px; text-align: center; padding: 20px 0; }
+
+  #controls {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: #0a0a0d;
+    border-top: 1px solid #1c1c22;
+    display: flex;
+    gap: 10px;
+  }
+  #next-turn-btn {
+    flex: 1;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    background: #4ade80;
+    color: #06280f;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #next-turn-btn:active { background: #3fc76f; }
+  #next-turn-btn:disabled { opacity: 0.5; }
+
+  #detail-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: flex-end;
+    z-index: 20;
+  }
+  #detail-overlay.visible { display: flex; }
+  #detail-panel {
+    background: #101014;
+    width: 100%;
+    max-height: 82vh;
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid #232329;
+  }
+  #detail-panel h2 { margin: 0 0 4px; font-size: 20px; }
+  #detail-panel .sub { color: #9a9aa2; font-size: 13px; margin-bottom: 16px; }
+  #detail-panel .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #1c1c22;
     font-size: 13px;
   }
+  #detail-panel .stat-row b { color: #cfcfd6; }
+  #detail-panel h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #8a8a92;
+    margin: 18px 0 8px;
+  }
+  #detail-panel .mem-item, .rel-item {
+    font-size: 13px;
+    padding: 8px 0;
+    border-bottom: 1px solid #1c1c22;
+    line-height: 1.4;
+  }
+  #close-detail {
+    float: right;
+    background: #1c1c22;
+    border: none;
+    color: #cfcfd6;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  #toast {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top, 16px));
+    left: 16px; right: 16px;
+    background: rgba(220,60,60,0.95);
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 13px;
+    display: none;
+    z-index: 30;
+  }
+  #toast.visible { display: block; }
 </style>
 </head>
 <body>
-  <h1>AI Society Simulator</h1>
-  <p>Backend skeleton — step 1</p>
-  <div id="status">Checking server + database…</div>
 
-  <script>
-    fetch('/health')
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('status').textContent =
-          data.status === 'ok'
-            ? '✅ Server and database are connected.'
-            : '❌ Something is wrong: ' + data.message;
-      })
-      .catch(err => {
-        document.getElementById('status').textContent = '❌ Could not reach server: ' + err.message;
-      });
-  </script>
+<header>
+  <h1>AI Society Simulator</h1>
+  <p>Watch three minds make their own choices</p>
+  <div id="turn-badge">Turn —</div>
+</header>
+
+<main>
+  <h2 class="section-title">Characters</h2>
+  <div id="character-cards"></div>
+
+  <h2 class="section-title">Event Log</h2>
+  <div id="event-log"><div id="empty-log">No events yet — tap Next Turn to begin.</div></div>
+</main>
+
+<div id="controls">
+  <button id="next-turn-btn">Next Turn</button>
+</div>
+
+<div id="toast"></div>
+
+<div id="detail-overlay">
+  <div id="detail-panel"></div>
+</div>
+
+<script>
+const cardsEl = document.getElementById('character-cards');
+const logEl = document.getElementById('event-log');
+const turnBadge = document.getElementById('turn-badge');
+const nextTurnBtn = document.getElementById('next-turn-btn');
+const toast = document.getElementById('toast');
+const detailOverlay = document.getElementById('detail-overlay');
+const detailPanel = document.getElementById('detail-panel');
+
+let charactersCache = [];
+
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  setTimeout(() => toast.classList.remove('visible'), 4000);
+}
+
+async function loadCharacters() {
+  const res = await fetch('/characters');
+  const data = await res.json();
+  if (data.status !== 'ok') throw new Error(data.message);
+  charactersCache = data.characters;
+  renderCharacters();
+}
+
+function renderCharacters() {
+  cardsEl.innerHTML = '';
+  charactersCache.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'char-card';
+    card.innerHTML = `
+      <div class="char-card-top">
+        <div class="char-name">${c.name}</div>
+        <div class="char-mood">${c.mood}</div>
+      </div>
+      <div class="char-meta">
+        <span>📍 <b>${c.location}</b></span>
+        <span>💰 <b>₹${c.money}</b></span>
+      </div>
+    `;
+    card.addEventListener('click', () => openDetail(c.id));
+    cardsEl.appendChild(card);
+  });
+}
+
+async function loadEvents() {
+  const res = await fetch('/events');
+  const data = await res.json();
+  if (data.status !== 'ok') throw new Error(data.message);
+
+  if (data.events.length === 0) {
+    logEl.innerHTML = '<div id="empty-log">No events yet — tap Next Turn to begin.</div>';
+    return;
+  }
+
+  logEl.innerHTML = data.events.map(e => `
+    <div class="event-entry">
+      <span class="event-turn">Turn ${e.turn_number}</span>${e.description}
+    </div>
+  `).join('');
+}
+
+async function loadTurn() {
+  const eventsRes = await fetch('/events');
+  const eventsData = await eventsRes.json();
+  const latestTurn = eventsData.events.length > 0 ? eventsData.events[0].turn_number : 0;
+  turnBadge.textContent = `Turn ${latestTurn}`;
+}
+
+async function openDetail(characterId) {
+  const character = charactersCache.find(c => c.id === characterId);
+  if (!character) return;
+
+  detailPanel.innerHTML = `<div style="text-align:center;padding:30px;color:#8a8a92;">Loading…</div>`;
+  detailOverlay.classList.add('visible');
+
+  const [memRes, relRes] = await Promise.all([
+    fetch('/memories'),
+    fetch('/relationships')
+  ]);
+  const memData = await memRes.json();
+  const relData = await relRes.json();
+
+  const myMemories = memData.memories
+    .filter(m => m.character_name === character.name)
+    .slice(-8)
+    .reverse();
+
+  const myRelationships = relData.relationships
+    .filter(r => r.from_character === character.name);
+
+  detailPanel.innerHTML = `
+    <button id="close-detail">&times;</button>
+    <h2>${character.name}</h2>
+    <div class="sub">${character.personality}</div>
+
+    <div class="stat-row"><span>Location</span><b>${character.location}</b></div>
+    <div class="stat-row"><span>Money</span><b>₹${character.money}</b></div>
+    <div class="stat-row"><span>Mood</span><b>${character.mood}</b></div>
+    <div class="stat-row"><span>Goals</span><b>${character.goals}</b></div>
+    <div class="stat-row"><span>Fears</span><b>${character.fears}</b></div>
+    <div class="stat-row"><span>Values</span><b>${character.values_priority}</b></div>
+    <div class="stat-row"><span>Skills</span><b>${character.skills}</b></div>
+
+    <h3>Relationships</h3>
+    ${myRelationships.length > 0
+      ? myRelationships.map(r => `
+        <div class="rel-item">
+          <b>${r.to_character}</b> — trust ${r.trust}/100, affinity ${r.affinity}/100
+        </div>
+      `).join('')
+      : '<div class="rel-item">No relationship data.</div>'
+    }
+
+    <h3>Recent Memories</h3>
+    ${myMemories.length > 0
+      ? myMemories.map(m => `<div class="mem-item">${m.event_description}</div>`).join('')
+      : '<div class="mem-item">No memories yet.</div>'
+    }
+  `;
+
+  document.getElementById('close-detail').addEventListener('click', () => {
+    detailOverlay.classList.remove('visible');
+  });
+}
+
+detailOverlay.addEventListener('click', (e) => {
+  if (e.target === detailOverlay) detailOverlay.classList.remove('visible');
+});
+
+nextTurnBtn.addEventListener('click', async () => {
+  nextTurnBtn.disabled = true;
+  nextTurnBtn.textContent = 'Thinking…';
+  try {
+    const res = await fetch('/run-turn');
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message);
+
+    await loadCharacters();
+    await loadEvents();
+    await loadTurn();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    nextTurnBtn.disabled = false;
+    nextTurnBtn.textContent = 'Next Turn';
+  }
+});
+
+async function init() {
+  try {
+    await loadCharacters();
+    await loadEvents();
+    await loadTurn();
+  } catch (err) {
+    showToast('Error loading world: ' + err.message);
+  }
+}
+
+init();
+</script>
+
 </body>
 </html>
