@@ -5,6 +5,7 @@ const fs = require('fs');
 const { resolveEventKnowledge } = require('./eventEngine');
 const { getCharacterDecision } = require('./aiDecision');
 const { applyDecision } = require('./actionResolver');
+const { runTurn } = require('./turnEngine');
 require('dotenv').config();
 
 const app = express();
@@ -349,6 +350,22 @@ app.get('/relationships', async (req, res) => {
     res.json({ status: 'ok', relationships: result.rows });
   } catch (err) {
     console.error('Fetching relationships failed:', err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// THE REAL TURN ROUTE — Step 7.
+// Runs one full automatic turn: generates an event, figures out who's
+// affected, only calls AI for those characters, applies their decisions.
+app.get('/run-turn', async (req, res) => {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ status: 'error', message: 'Server missing GEMINI_API_KEY' });
+    }
+    const summary = await runTurn(pool, process.env.GEMINI_API_KEY);
+    res.json({ status: 'ok', summary });
+  } catch (err) {
+    console.error('Run turn failed:', err);
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
